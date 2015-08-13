@@ -145,6 +145,10 @@ case 'open':
     $results_type=__('Open Tickets');
     if (!$cfg->showAnsweredTickets())
         $tickets->filter(array('isanswered'=>0));
+    if (!$showassigned)
+        $tickets->filter(Q::any(array('staff_id'=>0, 'team_id'=>0)));
+    else
+        $tickets->values('staff__firstname', 'staff__lastname', 'team__name');
     $queue_sort_options = array('priority,updated', 'updated',
         'priority,due', 'due', 'priority,created', 'answered', 'number',
         'hot');
