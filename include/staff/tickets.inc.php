@@ -149,8 +149,8 @@ case 'open':
         $tickets->filter(Q::any(array('staff_id'=>0, 'team_id'=>0)));
     else
         $tickets->values('staff__firstname', 'staff__lastname', 'team__name');
-    $queue_sort_options = array('priority,updated', 'updated',
-        'priority,due', 'due', 'priority,created', 'answered', 'number',
+    $queue_sort_options = array('priority,due', 'updated',
+        'priority,updated', 'due', 'priority,created', 'answered', 'number',
         'hot');
     break;
 }
