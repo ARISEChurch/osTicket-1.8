@@ -31,7 +31,7 @@ class UserEmailModel extends VerySimpleModel {
     );
 
     function __toString() {
-        return $this->address;
+        return (string) $this->address;
     }
 }
 
@@ -180,20 +180,14 @@ RolePermission::register(/* @trans */ 'Users', UserModel::getPermissions());
 
 class UserCdata extends VerySimpleModel {
     static $meta = array(
-        'table' => 'user__cdata',
-        'view' => true,
+        'table' => USER_CDATA_TABLE,
         'pk' => array('user_id'),
+        'joins' => array(
+            'user' => array(
+                'constraint' => array('user_id' => 'UserModel.id'),
+            ),
+        ),
     );
-
-    static function getQuery($compiler) {
-        $form = UserForm::getUserForm();
-        $exclude = array('name', 'email');
-        return '('.$form->getCrossTabQuery($form->type, 'user_id', $exclude).')';
-    }
-
-    static function getSqlAddParams($compiler) {
-        return static::getQuery($compiler);
-    }
 }
 
 class User extends UserModel
@@ -207,7 +201,9 @@ implements TemplateVariable {
         $user = static::lookupByEmail($vars['email']);
         if (!$user && $create) {
             $name = $vars['name'];
-            if (!$name)
+            if (is_array($name))
+                $name = implode(', ', $name);
+            elseif (!$name)
                 list($name) = explode('@', $vars['email'], 2);
 
             $user = User::create(array(
@@ -432,6 +428,12 @@ implements TemplateVariable {
         return (string) $account->getStatus();
     }
 
+    function canSeeOrgTickets() {
+        return $this->org && (
+                $this->org->shareWithEverybody()
+            || ($this->isPrimaryContact() && $this->org->shareWithPrimaryContacts()));
+    }
+
     function register($vars, &$errors) {
 
         // user already registered?
@@ -480,38 +482,50 @@ implements TemplateVariable {
                 $valid = false;
             elseif (!$staff && !$entry->isValidForClient())
                 $valid = false;
-            elseif (($form= $entry->getDynamicForm())
-                        && $form->get('type') == 'U'
-                        && ($f=$form->getField('email'))
-                        && $f->getClean()
-                        && ($u=User::lookup(array('emails__address'=>$f->getClean())))
-                        && $u->id != $this->getId()) {
+            elseif ($entry->getDynamicForm()->get('type') == 'U'
+                    && ($f=$entry->getField('email'))
+                    &&  $f->getClean()
+                    && ($u=User::lookup(array('emails__address'=>$f->getClean())))
+                    && $u->id != $this->getId()) {
                 $valid = false;
                 $f->addError(__('Email is assigned to another user'));
             }
+
+            if (!$valid)
+                $errors = array_merge($errors, $entry->errors());
         }
+
 
         if (!$valid)
             return false;
 
+        // Save the entries
         foreach ($forms as $entry) {
-            if (($f=$entry->getDynamicForm()) && $f->get('type') == 'U') {
-                if (($name = $f->getField('name'))) {
-                    $this->name = $name->getClean();
+            if ($entry->getDynamicForm()->get('type') == 'U') {
+                //  Name field
+                if (($name = $entry->getField('name'))) {
+                    $name = $name->getClean();
+                    if (is_array($name))
+                        $name = implode(', ', $name);
+                    $this->name = $name;
                 }
 
-                if (($email = $f->getField('email'))) {
+                // Email address field
+                if (($email = $entry->getField('email'))) {
                     $this->default_email->address = $email->getClean();
                     $this->default_email->save();
                 }
             }
+
             // DynamicFormEntry::save returns the number of answers updated
             if ($entry->save()) {
                 $this->updated = SqlFunction::NOW();
             }
         }
+
         return $this->save();
     }
+
 
     function save($refetch=false) {
         // Drop commas and reorganize the name without them
@@ -596,7 +610,7 @@ implements TemplateVariable {
     }
 
     function __toString() {
-        return $this->address;
+        return (string) $this->address;
     }
 
     function getVar($what) {

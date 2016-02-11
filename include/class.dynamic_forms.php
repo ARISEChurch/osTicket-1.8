@@ -198,7 +198,7 @@ class DynamicForm extends VerySimpleModel {
         return $this->save();
     }
 
-    function getExportableFields($exclude=array()) {
+    function getExportableFields($exclude=array(), $prefix='__') {
         $fields = array();
         foreach ($this->getFields() as $f) {
             // Ignore core fields
@@ -209,7 +209,8 @@ class DynamicForm extends VerySimpleModel {
             elseif (!$f->hasData() || $f->isPresentationOnly())
                 continue;
 
-            $fields['__field_'.$f->get('id')] = $f;
+            $name = $f->get('name') ?: ('field_'.$f->get('id'));
+            $fields[$prefix.$name] = $f;
         }
         return $fields;
     }
@@ -320,14 +321,13 @@ class DynamicForm extends VerySimpleModel {
         $f = $answer->getField();
         $name = $f->get('name') ? $f->get('name')
             : 'field_'.$f->get('id');
-        $fields = sprintf('`%s`=', $name) . db_input(
-            implode(',', $answer->getSearchKeys()));
+        $fields = sprintf('`%s`=', $name) . db_input($answer->getSearchKeys());
         $sql = 'INSERT INTO `'.$cdata['table'].'` SET '.$fields
             . sprintf(', `%s`= %s',
                     $cdata['object_id'],
                     db_input($answer->getEntry()->get('object_id')))
             .' ON DUPLICATE KEY UPDATE '.$fields;
-        if (!db_query($sql) || !db_affected_rows())
+        if (!db_query($sql))
             return self::dropDynamicDataView($cdata['table']);
     }
 
@@ -342,6 +342,10 @@ class DynamicForm extends VerySimpleModel {
             return TicketForm::updateDynamicDataView($answer, $data);
         case 'A':
             return TaskForm::updateDynamicDataView($answer, $data);
+        case 'U':
+            return UserForm::updateDynamicDataView($answer, $data);
+        case 'O':
+            return OrganizationForm::updateDynamicDataView($answer, $data);
         }
 
     }
@@ -355,6 +359,10 @@ class DynamicForm extends VerySimpleModel {
             return TicketForm::dropDynamicDataView(TicketForm::$cdata['table']);
         case 'A':
             return TaskForm::dropDynamicDataView(TaskForm::$cdata['table']);
+        case 'U':
+            return UserForm::dropDynamicDataView(UserForm::$cdata['table']);
+        case 'O':
+            return OrganizationForm::dropDynamicDataView(OrganizationForm::$cdata['table']);
         }
 
     }
@@ -406,6 +414,12 @@ class DynamicForm extends VerySimpleModel {
 class UserForm extends DynamicForm {
     static $instance;
     static $form;
+
+    static $cdata = array(
+            'table' => USER_CDATA_TABLE,
+            'object_id' => 'user_id',
+            'object_type' => ObjectModel::OBJECT_TYPE_USER,
+        );
 
     static function objects() {
         $os = parent::objects();
@@ -518,12 +532,11 @@ class TicketForm extends DynamicForm {
             return;
 
         $name = $f->get('name') ?: ('field_'.$f->get('id'));
-        $fields = sprintf('`%s`=', $name) . db_input(
-            implode(',', $answer->getSearchKeys()));
+        $fields = sprintf('`%s`=', $name) . db_input($answer->getSearchKeys());
         $sql = 'INSERT INTO `'.TABLE_PREFIX.'ticket__cdata` SET '.$fields
             .', `ticket_id`='.db_input($answer->getEntry()->get('object_id'))
             .' ON DUPLICATE KEY UPDATE '.$fields;
-        if (!db_query($sql) || !db_affected_rows())
+        if (!db_query($sql))
             return self::dropDynamicDataView();
     }
 }
@@ -1428,14 +1441,7 @@ class DynamicFormEntryAnswer extends VerySimpleModel {
     }
 
     function getSearchKeys() {
-        $val = $this->getField()->to_php(
-            $this->get('value'), $this->get('value_id'));
-        if (is_array($val))
-            return array_keys($val);
-        elseif (is_object($val) && method_exists($val, 'getId'))
-            return array($val->getId());
-
-        return array($val);
+        return implode(',', (array) $this->getField()->getKeys($this->getValue()));
     }
 
     function asVar() {
@@ -1553,6 +1559,14 @@ class SelectionField extends FormField {
         // Don't set the ID here as multiselect prevents using exactly one
         // ID value. Instead, stick with the JSON value only.
         return $value;
+    }
+
+    function getKeys($value) {
+        if (!is_array($value))
+            $value = $this->getChoice($value);
+        if (is_array($value))
+            return implode(', ', array_keys($value));
+        return (string) $value;
     }
 
     // PHP 5.4 Move this to a trait
